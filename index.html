@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Custom Cute Rhythm Game</title>
+    <style>
+        :root {
+            --bg-color: #fff0f6;
+            --ui-color: #ff85c0;
+            --note-color: #ffadd2;
+            --font-color: #780650;
+        }
+
+        body {
+            margin: 0; background-color: var(--bg-color);
+            color: var(--font-color); font-family: 'Arial Rounded MT Bold', sans-serif;
+            display: flex; justify-content: center; overflow: hidden;
+        }
+
+        /* 설정 사이드바 */
+        #settings-panel {
+            position: absolute; left: 20px; top: 20px; width: 220px;
+            background: rgba(255, 255, 255, 0.9); padding: 20px;
+            border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            z-index: 100; border: 3px solid var(--ui-color);
+        }
+
+        .setting-item { margin-bottom: 15px; font-size: 14px; }
+        input[type="color"] { width: 100%; height: 30px; border: none; cursor: pointer; }
+        input[type="text"] { width: 90%; padding: 8px; border: 2px solid var(--ui-color); border-radius: 10px; }
+
+        /* 게임 라인 */
+        #game-board {
+            display: flex; width: 400px; height: 100vh;
+            background: rgba(255, 255, 255, 0.3);
+            border-left: 6px solid var(--ui-color); border-right: 6px solid var(--ui-color);
+        }
+
+        .lane { flex: 1; position: relative; border-right: 1px dashed var(--ui-color); }
+        .hit-zone {
+            position: absolute; bottom: 80px; width: 50px; height: 50px;
+            left: calc(50% - 25px); background: var(--ui-color);
+            border-radius: 50%; opacity: 0.7; border: 3px solid white;
+            display: flex; justify-content: center; align-items: center; color: white;
+        }
+
+        .note {
+            position: absolute; width: 50px; height: 50px;
+            background: var(--note-color); border-radius: 50%;
+            left: calc(50% - 25px); border: 3px solid white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        /* 캐릭터 & 채팅 (오른쪽) */
+        #character-area {
+            position: absolute; right: 80px; bottom: 50px;
+            display: flex; flex-direction: column; align-items: center;
+        }
+
+        #chat-container {
+            height: 250px; display: flex; flex-direction: column-reverse;
+            align-items: center; margin-bottom: 20px;
+        }
+
+        .bubble {
+            background: white; border: 2px solid var(--ui-color);
+            border-radius: 20px; padding: 10px 15px; margin-bottom: 10px;
+            font-weight: bold; animation: popFade 2s forwards;
+            white-space: nowrap;
+        }
+
+        @keyframes popFade {
+            0% { opacity: 1; transform: translateY(0) scale(0.8); }
+            100% { opacity: 0; transform: translateY(-100px) scale(1.1); }
+        }
+
+        #my-image {
+            width: 150px; height: 150px; border-radius: 50%;
+            border: 6px solid white; box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            object-fit: cover; background: #eee;
+            animation: bounce 0.5s infinite alternate ease-in-out;
+        }
+
+        @keyframes bounce {
+            from { transform: translateY(0); } to { transform: translateY(-30px); }
+        }
+
+        #judgment-text {
+            position: absolute; top: 30%; font-size: 50px; font-weight: bold;
+            color: var(--ui-color); text-shadow: 2px 2px white; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="settings-panel">
+    <h3>⚙️ 게임 설정</h3>
+    <div class="setting-item">
+        <label>배경 색상</label>
+        <input type="color" id="color-bg" value="#fff0f6" oninput="updateColors()">
+    </div>
+    <div class="setting-item">
+        <label>UI/라인 색상</label>
+        <input type="color" id="color-ui" value="#ff85c0" oninput="updateColors()">
+    </div>
+    <div class="setting-item">
+        <label>노트 색상</label>
+        <input type="color" id="color-note" value="#ffadd2" oninput="updateColors()">
+    </div>
+    <div class="setting-item">
+        <label>유튜브 ID/URL</label>
+        <input type="text" id="yt-url" placeholder="주소 입력">
+    </div>
+    <div class="setting-item">
+        <label>내 사진 업로드</label>
+        <input type="file" id="image-input" accept="image/*" onchange="loadMyImage(this)">
+    </div>
+    <button onclick="startGame()" style="width:100%; padding:10px; background:var(--ui-color); color:white; border:none; border-radius:10px; cursor:pointer; font-weight:bold;">시작하기!</button>
+</div>
+
+<div id="game-board">
+    <div id="judgment-text"></div>
+    <div class="lane" id="l0"><div class="hit-zone">F</div></div>
+    <div class="lane" id="l1"><div class="hit-zone">G</div></div>
+    <div class="lane" id="l2"><div class="hit-zone">H</div></div>
+    <div class="lane" id="l3"><div class="hit-zone">J</div></div>
+</div>
+
+<div id="character-area">
+    <div id="chat-container"></div>
+    <img id="my-image" src="" alt="캐릭터">
+</div>
+
+<div id="player" style="display:none"></div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+    let player;
+    const scripts = ["훌륭한데요? ✨", "잘 하고 있군요.", "리듬 천재!", "완벽해요!", "최고예요! 👍"];
+    const lanes = [document.getElementById('l0'), document.getElementById('l1'), document.getElementById('l2'), document.getElementById('l3')];
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // 1. 색상 실시간 업데이트
+    function updateColors() {
+        const root = document.querySelector(':root');
+        root.style.setProperty('--bg-color', document.getElementById('color-bg').value);
+        root.style.setProperty('--ui-color', document.getElementById('color-ui').value);
+        root.style.setProperty('--note-color', document.getElementById('color-note').value);
+    }
+
+    // 2. 사진 업로드 처리
+    function loadMyImage(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = (e) => { document.getElementById('my-image').src = e.target.result; };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    // 3. 유튜브 API
+    function onYouTubeIframeAPIReady() {
+        player = new YT.Player('player', { height: '0', width: '0' });
+    }
+
+    function startGame() {
+        const url = document.getElementById('yt-url').value;
+        const vId = url.split('v=')[1]?.split('&')[0] || url.split('/').pop();
+        if(vId) {
+            player.loadVideoById(vId);
+            player.playVideo();
+            setInterval(spawnNote, 600); // 노트 생성 시작
+        }
+    }
+
+    // 4. 리듬 게임 로직
+    function spawnNote() {
+        if(player.getPlayerState() !== 1) return;
+        const laneIdx = Math.floor(Math.random() * 4);
+        const note = document.createElement('div');
+        note.className = 'note';
+        note.style.top = '-50px';
+        lanes[laneIdx].appendChild(note);
+
+        let pos = -50;
+        const speed = 7;
+        const move = setInterval(() => {
+            pos += speed;
+            note.style.top = pos + 'px';
+            if(pos > window.innerHeight) {
+                clearInterval(move);
+                if(note.parentNode) {
+                    showJudgment("MISS");
+                    note.remove();
+                }
+            }
+        }, 16);
+        note.dataset.timer = move;
+    }
+
+    function showJudgment(txt) {
+        const jd = document.getElementById('judgment-text');
+        jd.innerText = txt;
+        if(txt === "PERFECT") {
+            playHitSound();
+            spawnChat();
+        }
+    }
+
+    function spawnChat() {
+        const container = document.getElementById('chat-container');
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        bubble.innerText = scripts[Math.floor(Math.random() * scripts.length)];
+        container.appendChild(bubble);
+        setTimeout(() => bubble.remove(), 2000);
+    }
+
+    function playHitSound() {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    window.addEventListener('keydown', (e) => {
+        const keyMap = {'f':0, 'g':1, 'h':2, 'j':3};
+        const idx = keyMap[e.key.toLowerCase()];
+        if(idx !== undefined) {
+            const lane = lanes[idx];
+            const notes = lane.getElementsByClassName('note');
+            if(notes.length > 0) {
+                const n = notes[0];
+                const y = parseInt(n.style.top);
+                const target = window.innerHeight - 130;
+                const diff = Math.abs(y - target);
+
+                if(diff < 50) {
+                    showJudgment("PERFECT");
+                    clearInterval(n.dataset.timer);
+                    n.remove();
+                }
+            }
+        }
+    });
+</script>
+</body>
+</html>
